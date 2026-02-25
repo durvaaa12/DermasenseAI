@@ -1,0 +1,110 @@
+from flask import render_template, jsonify, Flask, redirect, url_for, request, make_response
+import os
+import io
+import numpy as np
+from PIL import Image
+import keras.utils as image
+from keras.models import model_from_json
+
+app = Flask(__name__)
+
+SKIN_CLASSES = {
+    0: 'Actinic Keratoses: Pre-cancerous sun-damage patches on skin; may develop into skin cancer if untreated.',
+    1: 'Basal Cell Carcinoma: Slow-growing type of skin cancer, usually occurs on sun-exposed areas.',
+    2: 'Benign Keratosis: Non-cancerous, harmless skin growth; may appear as rough, scaly patches.',
+    3: 'Dermatofibroma: Small, benign skin lumps; usually painless and harmless.',
+    4: 'Melanoma: Dangerous type of skin cancer; can spread quickly if untreated.',
+    5: 'Melanocytic Nevi: Common moles; generally harmless but changes in shape/color may require monitoring.',
+    6: 'Vascular Skin Lesion: Abnormalities in blood vessels; may appear as red or purple spots on skin.'
+}
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/signin')
+def signin():
+    return render_template('signin.html')
+
+
+@app.route('/signup')
+def signup():
+    return render_template('signup.html')
+
+
+@app.route('/dashboard', methods=['GET', 'POST'])
+def dashboard():
+    return render_template('dashboard.html')
+
+def findMedicine(pred):
+    if pred == 0:
+        return "Fluorouracil cream (5-FU), Cryotherapy, or surgical removal if needed"
+    elif pred == 1:
+        return "Aldara (Imiquimod), Mohs Surgery or excision/ AYURVEDA :Apply Neem paste, Coconut oil with Turmeric, Maintain skin hygiene"
+    elif pred == 2:
+        return "Prescription Hydrogen Peroxide/ AYURVEDA :Apply Coconut oil, Keep skin clean and moisturized"
+    elif pred == 3:
+        return "fluorouracil/No treatment required unless for cosmetic reasons/  AYURVEDA :Apply Aloe Vera gel, Maintain gentle skin care"
+    elif pred == 4:
+        return "Surgery, Immunotherapy, Chemotherapy (Consult dermatologist immediately)"
+    elif pred == 5:
+        return "fluorouracil/Regular monitoring, Surgical removal if suspicious changes occur"
+    elif pred == 6:
+        return "fluorouracil/Laser therapy or Beta blockers depending on severity"        
+
+
+@app.route('/detect', methods=['GET', 'POST'])
+def detect():
+    json_response = {}
+    if request.method == 'POST':
+        try:
+            file = request.files['file']
+        except KeyError:
+            return make_response(jsonify({
+                'error': 'No file part in the request',
+                'code': 'FILE',
+                'message': 'file is not valid'
+            }), 400)
+
+        imagePil = Image.open(io.BytesIO(file.read()))
+        # Save the image to a BytesIO object
+        imageBytesIO = io.BytesIO()
+        imagePil.save(imageBytesIO, format='JPEG')
+        imageBytesIO.seek(0)
+        print("detected ")
+        path = imageBytesIO
+        j_file = open('model.json', 'r')
+        loaded_json_model = j_file.read()
+        j_file.close()
+        model = model_from_json(loaded_json_model)
+        model.load_weights('model.h5')
+        img = image.load_img(path, target_size=(224, 224))
+        img = np.array(img)
+        img = img.reshape((1, 224, 224, 3))
+        img = img/255
+        prediction = model.predict(img)
+        pred = np.argmax(prediction)
+        disease = SKIN_CLASSES[pred]
+        accuracy = prediction[0][pred]
+        accuracy = round(accuracy*100, 2)
+        medicine=findMedicine(pred)
+
+        json_response = {
+            "detected": False if pred == 2 else True,
+            "disease": disease,
+            "accuracy": accuracy,
+            "medicine" : medicine,
+            "img_path": file.filename,
+
+        }
+
+        return make_response(jsonify(json_response), 200)
+
+    else:
+        return render_template('detect.html')
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=3000)
